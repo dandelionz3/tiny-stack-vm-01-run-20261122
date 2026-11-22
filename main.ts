@@ -31,21 +31,22 @@ function run(p, inp) {
   const M = new Int32Array(256); // memory
   const out = new Uint8Array(65536);
   let sp = 0, csp = 0, pc = 0, steps = 0, olen = 0, ip = 0;
+  const R = (e) => [out.subarray(0, olen), e]; // trap/exit answer: output so far + code
   for (;;) {
-    if (steps === 1000000) return [out.subarray(0, olen), 10];
-    if (pc < 0 || pc >= n) return [out.subarray(0, olen), 9];
+    if (steps === 1000000) return R(10);
+    if (pc < 0 || pc >= n) return R(9);
     const op = p[pc];
     const t = T[op];
-    if (t === undefined) return [out.subarray(0, olen), 5];
+    if (t === undefined) return R(5);
     const imm = t[0];
-    if (pc + imm >= n) return [out.subarray(0, olen), 9];
+    if (pc + imm >= n) return R(9);
     steps++;
     const next = pc + 1 + imm;
-    if (sp < t[1]) return [out.subarray(0, olen), 2];
-    if (sp - t[1] + t[2] > 256) return [out.subarray(0, olen), 3];
+    if (sp < t[1]) return R(2);
+    if (sp - t[1] + t[2] > 256) return R(3);
     pc = next;
     switch (op) {
-      case 0: return [out.subarray(0, olen), 0];
+      case 0: return R(0);
       case 1: D[sp++] = (p[next - 1] << 24) >> 24; break;
       case 2: D[sp++] = p[next - 4] | (p[next - 3] << 8) | (p[next - 2] << 16) | (p[next - 1] << 24); break;
       case 3: sp--; break;
@@ -55,28 +56,23 @@ function run(p, inp) {
       case 7: { const a = D[sp - 3]; D[sp - 3] = D[sp - 2]; D[sp - 2] = D[sp - 1]; D[sp - 1] = a; break; }
       case 23: D[sp - 1] = -D[sp - 1] | 0; break;
       case 27: D[sp - 1] = ~D[sp - 1]; break;
-      case 16: case 17: case 18: case 19: case 20: case 21: case 22:
-      case 24: case 25: case 26: case 28: case 29: case 30: case 32: case 33: case 34: {
-        const b = D[sp - 1], a = D[sp - 2];
-        let r;
-        if (op === 16) r = (a + b) | 0;
-        else if (op === 17) r = (a - b) | 0;
-        else if (op === 18) r = Math.imul(a, b);
-        else if (op === 19) { if (b === 0) return [out.subarray(0, olen), 4]; r = a === -2147483648 && b === -1 ? a : (a / b) | 0; }
-        else if (op === 20) { if (b === 0) return [out.subarray(0, olen), 4]; r = b === -1 ? 0 : (a % b) | 0; }
-        else if (op === 21) { if (b === 0) return [out.subarray(0, olen), 4]; r = Math.floor((a >>> 0) / (b >>> 0)) | 0; }
-        else if (op === 22) { if (b === 0) return [out.subarray(0, olen), 4]; r = ((a >>> 0) % (b >>> 0)) | 0; }
-        else if (op === 24) r = a & b;
-        else if (op === 25) r = a | b;
-        else if (op === 26) r = a ^ b;
-        else if (op === 28) r = a << (b & 31);
-        else if (op === 29) r = a >> (b & 31);
-        else if (op === 30) r = (a >>> (b & 31)) | 0;
-        else if (op === 32) r = a === b ? 1 : 0;
-        else if (op === 33) r = a < b ? 1 : 0;
-        else r = (a >>> 0) < (b >>> 0) ? 1 : 0;
-        sp -= 2; D[sp++] = r; break;
-      }
+      // Binary ops: one case each, so the switch dispatches directly (no if/else chain).
+      case 16: D[sp - 2] = (D[sp - 2] + D[sp - 1]) | 0; sp--; break;
+      case 17: D[sp - 2] = (D[sp - 2] - D[sp - 1]) | 0; sp--; break;
+      case 18: D[sp - 2] = Math.imul(D[sp - 2], D[sp - 1]); sp--; break;
+      case 19: if (D[sp - 1] === 0) return R(4); D[sp - 2] = D[sp - 2] === -2147483648 && D[sp - 1] === -1 ? D[sp - 2] : (D[sp - 2] / D[sp - 1]) | 0; sp--; break;
+      case 20: if (D[sp - 1] === 0) return R(4); D[sp - 2] = D[sp - 1] === -1 ? 0 : (D[sp - 2] % D[sp - 1]) | 0; sp--; break;
+      case 21: if (D[sp - 1] === 0) return R(4); D[sp - 2] = Math.floor((D[sp - 2] >>> 0) / (D[sp - 1] >>> 0)) | 0; sp--; break;
+      case 22: if (D[sp - 1] === 0) return R(4); D[sp - 2] = ((D[sp - 2] >>> 0) % (D[sp - 1] >>> 0)) | 0; sp--; break;
+      case 24: D[sp - 2] &= D[sp - 1]; sp--; break;
+      case 25: D[sp - 2] |= D[sp - 1]; sp--; break;
+      case 26: D[sp - 2] ^= D[sp - 1]; sp--; break;
+      case 28: D[sp - 2] <<= D[sp - 1] & 31; sp--; break;
+      case 29: D[sp - 2] >>= D[sp - 1] & 31; sp--; break;
+      case 30: D[sp - 2] = (D[sp - 2] >>> (D[sp - 1] & 31)) | 0; sp--; break;
+      case 32: D[sp - 2] = D[sp - 2] === D[sp - 1] ? 1 : 0; sp--; break;
+      case 33: D[sp - 2] = D[sp - 2] < D[sp - 1] ? 1 : 0; sp--; break;
+      case 34: D[sp - 2] = (D[sp - 2] >>> 0) < (D[sp - 1] >>> 0) ? 1 : 0; sp--; break;
       case 48: case 49: case 50: {
         const rel = ((p[next - 2] | (p[next - 1] << 8)) << 16) >> 16;
         let take = true;
@@ -85,29 +81,29 @@ function run(p, inp) {
         break;
       }
       case 51:
-        if (csp === 64) return [out.subarray(0, olen), 7];
+        if (csp === 64) return R(7);
         C[csp++] = next; pc = p[next - 2] | (p[next - 1] << 8); break;
       case 52:
-        if (csp === 0) return [out.subarray(0, olen), 8];
+        if (csp === 0) return R(8);
         pc = C[--csp]; break;
-      case 64: { const a = D[sp - 1]; if (a < 0 || a >= 256) return [out.subarray(0, olen), 6]; D[sp - 1] = M[a]; break; }
+      case 64: { const a = D[sp - 1]; if (a < 0 || a >= 256) return R(6); D[sp - 1] = M[a]; break; }
       case 65: {
         const a = D[sp - 1], v = D[sp - 2];
-        if (a < 0 || a >= 256) return [out.subarray(0, olen), 6];
+        if (a < 0 || a >= 256) return R(6);
         sp -= 2; M[a] = v; break;
       }
       case 80: {
         const s = String(D[sp - 1]);
-        if (olen + s.length > 65536) return [out.subarray(0, olen), 11];
+        if (olen + s.length > 65536) return R(11);
         sp--;
         for (let i = 0; i < s.length; i++) out[olen++] = s.charCodeAt(i);
         break;
       }
       case 81:
-        if (olen + 1 > 65536) return [out.subarray(0, olen), 11];
+        if (olen + 1 > 65536) return R(11);
         out[olen++] = D[--sp] & 255; break;
       case 82: D[sp++] = ip < inp.length ? inp[ip++] : -1; break;
-      case 83: return [out.subarray(0, olen), D[--sp] & 255];
+      case 83: return R(D[--sp] & 255);
     }
   }
 }
